@@ -14,8 +14,6 @@ WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-RUN pip install --no-cache-dir --no-build-isolation .
-
 EXPOSE 4470
 
 CMD ["python", "-m", "mw_studio.server"]
