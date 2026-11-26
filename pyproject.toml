@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mw-studio"
+version = "0.1.0"
+description = "MoonWitness Media, Poster (CAN-0011) & FFmpeg Short-Clip Render Worker for mw-mission -> 9Drive"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [
+    { name = "A-L-L-A-H / MoonWitness" }
+]
+dependencies = []
+
+[project.scripts]
+mw-studio-server = "mw_studio.server:run_server"
+mw-studio-worker = "mw_studio.worker:StudioWorker"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
