@@ -52,7 +52,12 @@ def synthesize_tts_wav(
 ) -> TtsResult:
     """Synthesize deterministic mono PCM WAV audio after enforcing CAN-0011."""
     if isinstance(spec, dict):
-        validate_can_0011(spec)
+        validate_can_0011(
+            visual_prompt=str(spec.get("visual_prompt", "")),
+            subject=str(spec.get("subject", "")),
+            label=str(spec.get("label", "")),
+            reflection=str(spec.get("text", "")),
+        )
         req = TtsRequest(
             text=str(spec.get("text", "")).strip(),
             voice=str(spec.get("voice", "id-ID-ArdiNeural")).strip() or "id-ID-ArdiNeural",
@@ -60,7 +65,7 @@ def synthesize_tts_wav(
             duration_sec=float(spec.get("duration_sec", 0.25)),
         )
     else:
-        validate_can_0011({"text": spec.text, "voice": spec.voice})
+        validate_can_0011(reflection=spec.text, label=spec.voice)
         req = spec
 
     if not req.text:
@@ -113,7 +118,7 @@ def transcribe_stt_audio(
     if not audio_bytes:
         raise ValueError("audio_bytes must not be empty")
     if prompt_hint:
-        validate_can_0011({"prompt_hint": prompt_hint})
+        validate_can_0011(reflection=prompt_hint)
 
     audio_sha256 = hashlib.sha256(audio_bytes).hexdigest()
     normalized_lang = language.strip().lower() or "id"

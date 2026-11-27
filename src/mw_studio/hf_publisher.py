@@ -37,7 +37,7 @@ def prepare_hf_artifact(path_in_repo: str, content: bytes | str) -> HfArtifactFi
         raise ValueError(f"Invalid path_in_repo: {path_in_repo!r}")
     raw = content.encode("utf-8") if isinstance(content, str) else bytes(content)
     if isinstance(content, str):
-        validate_can_0011({"content": content, "path": cleaned_path})
+        validate_can_0011(reflection=content, title=cleaned_path)
     digest = hashlib.sha256(raw).hexdigest()
     return HfArtifactFile(path_in_repo=cleaned_path, content=raw, sha256=digest)
 
@@ -63,7 +63,7 @@ def publish_to_huggingface(
     if not files:
         raise ValueError("files list must not be empty")
 
-    validate_can_0011({"repo_id": cleaned_repo, "commit_message": commit_message})
+    validate_can_0011(title=cleaned_repo, reflection=commit_message)
 
     normalized_files: list[HfArtifactFile] = []
     for entry in files:
