@@ -2,22 +2,35 @@
 
 from __future__ import annotations
 
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-from pathlib import Path
 import subprocess
 import sys
 import threading
 import unittest
+from http import HTTPStatus
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from mw_studio.clipper import ClipRenderError, ClipSpec, build_vertical_clip_cmd, render_clip
+from mw_studio.clipper import (
+    ClipRenderError,
+    ClipSpec,
+    build_vertical_clip_cmd,
+    render_clip,
+)
 from mw_studio.hf_publisher import prepare_hf_artifact, publish_to_huggingface
 from mw_studio.poster import Can0011ViolationError, render_god_promise_svg
+from mw_studio.reel_generator import (
+    RemoteLeakGuardError,
+    compile_markdown_reel,
+    format_srt_timestamp,
+    format_vtt_timestamp,
+    parse_markdown_storyboard,
+    probe_reel_dependencies,
+)
 from mw_studio.server import create_server
 from mw_studio.tts_stt import synthesize_tts_wav, transcribe_stt_audio
 from mw_studio.worker import StudioWorker, WorkerConfig
@@ -59,9 +72,11 @@ class PosterTests(unittest.TestCase):
         ]
         for override in forbidden_cases:
             payload = dict(base, **override)
-            with self.subTest(override=override):
-                with self.assertRaises(Can0011ViolationError):
-                    render_god_promise_svg(payload)
+            with (
+                self.subTest(override=override),
+                self.assertRaises(Can0011ViolationError),
+            ):
+                render_god_promise_svg(payload)
 
 
 class ClipperTests(unittest.TestCase):
@@ -90,22 +105,38 @@ class ClipperTests(unittest.TestCase):
         self.assertEqual(cmd[-1], "/tmp/out.mp4")
 
     def test_render_clip_handles_success_and_failure(self) -> None:
-        def ok_runner(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        def ok_runner(
+            cmd: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(cmd, 0, stdout="ok", stderr="")
 
         res = render_clip(
-            {"input_path": "in.mp4", "output_path": "out.mp4", "start_sec": 0, "duration_sec": 10},
+            {
+                "input_path": "in.mp4",
+                "output_path": "out.mp4",
+                "start_sec": 0,
+                "duration_sec": 10,
+            },
             runner=ok_runner,
         )
         self.assertEqual(res.returncode, 0)
         self.assertEqual(res.output_path, "out.mp4")
 
-        def fail_runner(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="invalid stream")
+        def fail_runner(
+            cmd: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            return subprocess.CompletedProcess(
+                cmd, 1, stdout="", stderr="invalid stream"
+            )
 
         with self.assertRaises(ClipRenderError):
             render_clip(
-                {"input_path": "in.mp4", "output_path": "out.mp4", "start_sec": 0, "duration_sec": 10},
+                {
+                    "input_path": "in.mp4",
+                    "output_path": "out.mp4",
+                    "start_sec": 0,
+                    "duration_sec": 10,
+                },
                 runner=fail_runner,
             )
 
@@ -139,12 +170,16 @@ class WorkerLoopTests(unittest.TestCase):
         ]
 
         class MockMissionHandler(BaseHTTPRequestHandler):
-            def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            def log_message(self, format: str, *args: object) -> None:
                 return
 
-            def do_POST(self) -> None:  # noqa: N802
+            def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", "0"))
-                body = json.loads(self.rfile.read(length).decode("utf-8")) if length else {}
+                body = (
+                    json.loads(self.rfile.read(length).decode("utf-8"))
+                    if length
+                    else {}
+                )
                 mission_events.append((self.path, body))
                 if self.path == "/api/workers/lease":
                     if jobs_queue:
@@ -166,13 +201,15 @@ class WorkerLoopTests(unittest.TestCase):
                 self.wfile.write(resp)
 
         class MockEchoHandler(BaseHTTPRequestHandler):
-            def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            def log_message(self, format: str, *args: object) -> None:
                 return
 
-            def do_POST(self) -> None:  # noqa: N802
+            def do_POST(self) -> None:
                 length = int(self.headers.get("Content-Length", "0"))
                 echo_uploads.append(self.rfile.read(length))
-                resp = json.dumps({"drive": "9Drive", "object_id": "obj-9drive-1"}).encode("utf-8")
+                resp = json.dumps(
+                    {"drive": "9Drive", "object_id": "obj-9drive-1"}
+                ).encode("utf-8")
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(resp)))
@@ -224,7 +261,9 @@ class ServerTests(unittest.TestCase):
         cls.server.shutdown()
         cls.server.server_close()
 
-    def _request(self, method: str, path: str, body: dict[str, object] | None = None) -> tuple[int, str, bytes]:
+    def _request(
+        self, method: str, path: str, body: dict[str, object] | None = None
+    ) -> tuple[int, str, bytes]:
         data = json.dumps(body).encode("utf-8") if body is not None else None
         headers = {"Content-Type": "application/json"} if body is not None else {}
         req = urllib_request.Request(
@@ -339,9 +378,13 @@ class TtsSttAndHfPublisherTests(unittest.TestCase):
 
         captured: list[tuple[str, dict[str, str], bytes]] = []
 
-        def fake_transport(url: str, headers: dict[str, str], body: bytes) -> dict[str, object]:
+        def fake_transport(
+            url: str, headers: dict[str, str], body: bytes
+        ) -> dict[str, object]:
             captured.append((url, headers, body))
-            return {"commitUrl": "https://huggingface.co/datasets/moonwitness/studio-cards/commit/abc1234"}
+            return {
+                "commitUrl": "https://huggingface.co/datasets/moonwitness/studio-cards/commit/abc1234"
+            }
 
         live_receipt = publish_to_huggingface(
             "moonwitness/studio-cards",
@@ -355,6 +398,135 @@ class TtsSttAndHfPublisherTests(unittest.TestCase):
 
         with self.assertRaises(Can0011ViolationError):
             prepare_hf_artifact("bad.txt", "visual illustration of Prophet Muhammad")
+
+
+class ReelGeneratorV63Tests(unittest.TestCase):
+    def test_markdown_to_9_16_storyboard_tts_and_ffmpeg_subtitles(self) -> None:
+        sample_markdown = """# Frontier Epistemic Digest
+## Quantum & Sharia Ledger Alignment
+- Zero-trust cryptographic proofs protect every transaction in the Mizan ledger.
+- Local-first Edge-TTS voice synthesis prevents external telemetry leaks.
+> Indeed, with hardship comes ease and clarity of purpose.
+"""
+        compiled = compile_markdown_reel(
+            {
+                "markdown": sample_markdown,
+                "corpus_ref": "QS. Ash-Sharh 94:5-6 · V63",
+                "voice": "id-ID-ArdiNeural",
+                "background_input_path": "/local/media/bg.mp4",
+                "output_video_path": "/local/media/out-9x16.mp4",
+                "subtitle_output_path": "/local/media/out-9x16.srt",
+            }
+        )
+        self.assertEqual(compiled.storyboard.title, "Frontier Epistemic Digest")
+        self.assertEqual(compiled.storyboard.width, 1080)
+        self.assertEqual(compiled.storyboard.height, 1920)
+        self.assertEqual(compiled.storyboard.can_0011, "enforced")
+        self.assertTrue(compiled.storyboard.local_first)
+        self.assertEqual(len(compiled.storyboard.scenes), 3)
+        self.assertEqual(len(compiled.tts_segments), 3)
+        self.assertGreater(compiled.storyboard.total_duration_sec, 6.0)
+        self.assertIn("00:00:00,000 -->", compiled.srt_subtitles)
+        self.assertIn("WEBVTT", compiled.vtt_subtitles)
+        self.assertTrue(compiled.combined_audio_wav.startswith(b"RIFF"))
+        self.assertEqual(len(compiled.audio_sha256), 64)
+        self.assertEqual(len(compiled.manifest_sha256), 64)
+        self.assertIn(
+            "scale=1080:1920:force_original_aspect_ratio=increase",
+            " ".join(compiled.ffmpeg_command),
+        )
+        self.assertIn(
+            "subtitles='/local/media/out-9x16.srt'", " ".join(compiled.ffmpeg_command)
+        )
+        for scene in compiled.storyboard.scenes:
+            self.assertIn("<svg", scene.poster_svg)
+            self.assertIn("CAN-0011 ANICONIC VERIFIED", scene.poster_svg)
+
+    def test_can0011_and_local_first_remote_leak_guards(self) -> None:
+        with self.assertRaises(Can0011ViolationError):
+            parse_markdown_storyboard(
+                {
+                    "markdown": "# Bad Reel\n- Draw a visual portrait of Prophet Muhammad in the clouds.",
+                }
+            )
+
+        with self.assertRaises(RemoteLeakGuardError):
+            parse_markdown_storyboard(
+                {
+                    "markdown": "# Leak Test\n- Pulling assets from [external](https://evil.example.com/leak.mp4)",
+                }
+            )
+
+        with self.assertRaises(RemoteLeakGuardError):
+            compile_markdown_reel(
+                {
+                    "markdown": "# Clean Text\n- Local narration segment.",
+                    "background_input_path": "https://cdn.external.example/video.mp4",
+                }
+            )
+
+        loopback_story = parse_markdown_storyboard(
+            {
+                "markdown": "# Loopback Allowed\n- Local reference [echo](http://127.0.0.1:4460/asset)",
+            }
+        )
+        self.assertEqual(len(loopback_story.scenes), 1)
+
+    def test_dependency_probe_and_execute_ffmpeg_runner(self) -> None:
+        probe = probe_reel_dependencies()
+        self.assertTrue(probe.local_only_ready)
+        self.assertEqual(format_srt_timestamp(65.432), "00:01:05,432")
+        self.assertEqual(format_vtt_timestamp(65.432), "00:01:05.432")
+
+        executed_cmds: list[list[str]] = []
+
+        def fake_ffmpeg(
+            cmd: list[str], **kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            executed_cmds.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0, stdout="rendered", stderr="")
+
+        compiled = compile_markdown_reel(
+            {
+                "markdown": "# Quick Clip\n- Single scene vertical reel.",
+                "background_input_path": "local://bg.mp4",
+                "output_video_path": "local://out.mp4",
+                "subtitle_output_path": "local://out.srt",
+                "execute_ffmpeg": True,
+            },
+            ffmpeg_runner=fake_ffmpeg,
+        )
+        self.assertEqual(len(executed_cmds), 1)
+        self.assertIsNotNone(compiled.render_result)
+
+    def test_server_reel_compile_endpoint(self) -> None:
+        server = create_server(host="127.0.0.1", port=0)
+        port = server.server_address[1]
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            body = json.dumps(
+                {
+                    "markdown": "# Sovereign Digest\n- First vertical reel takeaway.\n- Second takeaway.",
+                    "corpus_ref": "QS. 94:5",
+                }
+            ).encode("utf-8")
+            req = urllib_request.Request(
+                f"http://127.0.0.1:{port}/api/reel/compile",
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib_request.urlopen(req, timeout=5) as resp:
+                self.assertEqual(resp.status, 200)
+                payload = json.loads(resp.read().decode("utf-8"))
+                self.assertEqual(payload["aspect_ratio"], "9:16")
+                self.assertEqual(payload["scene_count"], 2)
+                self.assertEqual(payload["can_0011"], "enforced")
+                self.assertTrue(payload["local_first"])
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

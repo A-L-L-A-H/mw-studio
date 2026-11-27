@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 from urllib import request as urllib_request
 
 from mw_studio.poster import validate_can_0011
@@ -77,7 +78,7 @@ def publish_to_huggingface(
                 )
             )
         else:
-            raise ValueError("Unsupported file entry type")
+            raise TypeError("Unsupported file entry type")
 
     manifest_entries = [
         {"path": item.path_in_repo, "sha256": item.sha256, "size": len(item.content)}
@@ -125,7 +126,9 @@ def publish_to_huggingface(
     if transport is not None:
         response_data = transport(endpoint, headers, payload_bytes)
     else:
-        req = urllib_request.Request(endpoint, data=payload_bytes, headers=headers, method="POST")
+        req = urllib_request.Request(
+            endpoint, data=payload_bytes, headers=headers, method="POST"
+        )
         with urllib_request.urlopen(req, timeout=15) as resp:
             response_data = json.loads(resp.read().decode("utf-8"))
 
