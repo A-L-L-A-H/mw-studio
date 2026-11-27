@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   commitlint:
-    name: Commitlint
+    name: commitlint
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
@@ -34,7 +34,7 @@ jobs:
         run: npx commitlint --from=origin/main --to=HEAD --extends @commitlint/config-conventional
 
   verify:
-    name: Verify
+    name: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -70,7 +70,7 @@ jobs:
           grep -R --include='*.py' -E '/health|/metrics' src || echo "No /health or /metrics in service source"
 
   security:
-    name: Security
+    name: security
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
