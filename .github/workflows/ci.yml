@@ -5,46 +5,51 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  test:
+  verify:
+    name: Verify
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
-      - name: Set up Python 3.12
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version-file: pyproject.toml
+          cache: pip
 
-      - name: Run unit tests
-        env:
-          PYTHONPATH: src
-        run: python -m unittest discover -s tests -v
+      - name: Check conventional commit messages
+        if: github.event_name == 'pull_request'
+        run: |
+          git log --format=%s origin/main..HEAD | while IFS= read -r msg; do
+            echo "$msg" | grep -qE '^(feat|fix|docs|chore|refactor|test|perf|build|ci|revert|security|deps|style|release)(\(.+\))?!?: .+' || { echo "Invalid: $msg"; exit 1; }
+          done
 
-  docker:
-    needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          pip install -e .[test] 2>/dev/null || pip install -e .
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check .
 
-      - name: Build and push image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ghcr.io/a-l-l-a-h/mw-studio:latest
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Tests
+        run: PYTHONPATH=src python -m unittest discover -s tests -v
+
+      - name: Compile
+        run: python -m compileall -q src
