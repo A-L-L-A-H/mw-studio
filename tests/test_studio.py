@@ -16,8 +16,10 @@ from urllib import request as urllib_request
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from mw_studio.clipper import ClipRenderError, ClipSpec, build_vertical_clip_cmd, render_clip
+from mw_studio.hf_publisher import prepare_hf_artifact, publish_to_huggingface
 from mw_studio.poster import Can0011ViolationError, render_god_promise_svg
 from mw_studio.server import create_server
+from mw_studio.tts_stt import synthesize_tts_wav, transcribe_stt_audio
 from mw_studio.worker import StudioWorker, WorkerConfig
 
 
@@ -295,6 +297,64 @@ class ServerTests(unittest.TestCase):
         plan = json.loads(raw.decode("utf-8"))
         self.assertEqual(plan["aspect_ratio"], "9:16")
         self.assertEqual(plan["command"][0], "ffmpeg")
+
+
+class TtsSttAndHfPublisherTests(unittest.TestCase):
+    def test_tts_and_stt_roundtrip_and_can0011_guard(self) -> None:
+        tts_res = synthesize_tts_wav(
+            {
+                "text": "Bismillah, signal clarity across RockSoul horizon.",
+                "voice": "id-ID-ArdiNeural",
+                "sample_rate": 16000,
+                "duration_sec": 0.1,
+            }
+        )
+        self.assertTrue(tts_res.audio_wav.startswith(b"RIFF"))
+        self.assertEqual(len(tts_res.sha256), 64)
+
+        stt_res = transcribe_stt_audio(
+            tts_res.audio_wav,
+            language="id",
+            prompt_hint="Bismillah, signal clarity across RockSoul horizon.",
+        )
+        self.assertEqual(stt_res.audio_sha256, tts_res.sha256)
+        self.assertEqual(stt_res.language, "id")
+        self.assertEqual(len(stt_res.segments), 1)
+        self.assertIn("RockSoul", stt_res.transcript)
+
+        with self.assertRaises(Can0011ViolationError):
+            synthesize_tts_wav({"text": "draw a portrait of Allah in golden light"})
+
+    def test_hf_publisher_dry_run_and_custom_transport(self) -> None:
+        artifact = prepare_hf_artifact("posters/card-01.svg", "<svg>GOD PROMISE</svg>")
+        self.assertEqual(len(artifact.sha256), 64)
+
+        dry_receipt = publish_to_huggingface(
+            "moonwitness/studio-cards",
+            [artifact],
+            dry_run=True,
+        )
+        self.assertTrue(dry_receipt.dry_run)
+        self.assertEqual(dry_receipt.file_count, 1)
+
+        captured: list[tuple[str, dict[str, str], bytes]] = []
+
+        def fake_transport(url: str, headers: dict[str, str], body: bytes) -> dict[str, object]:
+            captured.append((url, headers, body))
+            return {"commitUrl": "https://huggingface.co/datasets/moonwitness/studio-cards/commit/abc1234"}
+
+        live_receipt = publish_to_huggingface(
+            "moonwitness/studio-cards",
+            [artifact],
+            token="hf_test_token_123",
+            transport=fake_transport,
+        )
+        self.assertFalse(live_receipt.dry_run)
+        self.assertEqual(len(captured), 1)
+        self.assertTrue(live_receipt.commit_url.endswith("/abc1234"))
+
+        with self.assertRaises(Can0011ViolationError):
+            prepare_hf_artifact("bad.txt", "visual illustration of Prophet Muhammad")
 
 
 if __name__ == "__main__":
