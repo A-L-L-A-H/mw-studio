@@ -18,7 +18,7 @@ jobs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
-      - uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5
+      - uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071
         id: release
         with:
           config-file: release-please-config.json
@@ -34,7 +34,7 @@ jobs:
         with:
           python-version-file: pyproject.toml
       - run: pip install build && python -m build
-      - uses: softprops/action-gh-release@40c2ca6ddd77ba2a30bbea8f67409c0f76868d67
+      - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3
         with:
           tag_name: ${{ needs.release-please.outputs.tag_name }}
           files: dist/*
