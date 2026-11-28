@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from html import escape
 import re
 import textwrap
-from typing import Mapping
+from collections.abc import Mapping
+from dataclasses import dataclass
+from html import escape
 
 
 class Can0011ViolationError(ValueError):
@@ -87,7 +87,9 @@ def validate_can_0011(
     for field_name, field_value in text_fields.items():
         if not field_value:
             continue
-        if _SACRED_FIGURES_RE.search(field_value) and _VISUAL_DEPICTION_RE.search(field_value):
+        if _SACRED_FIGURES_RE.search(field_value) and _VISUAL_DEPICTION_RE.search(
+            field_value
+        ):
             raise Can0011ViolationError(
                 f"CAN-0011 violation in '{field_name}': visual depiction of Allah, "
                 "Prophet Muhammad, or Isa/Yesus is strictly prohibited."

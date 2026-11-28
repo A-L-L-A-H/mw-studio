@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
+import io
 import math
 import struct
-from typing import Any, Callable
 import wave
-import io
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 from mw_studio.poster import validate_can_0011
 
@@ -60,7 +61,8 @@ def synthesize_tts_wav(
         )
         req = TtsRequest(
             text=str(spec.get("text", "")).strip(),
-            voice=str(spec.get("voice", "id-ID-ArdiNeural")).strip() or "id-ID-ArdiNeural",
+            voice=str(spec.get("voice", "id-ID-ArdiNeural")).strip()
+            or "id-ID-ArdiNeural",
             sample_rate=int(spec.get("sample_rate", 16000)),
             duration_sec=float(spec.get("duration_sec", 0.25)),
         )
@@ -78,7 +80,9 @@ def synthesize_tts_wav(
     if backend is not None:
         wav_bytes = backend(req)
     else:
-        wav_bytes = _build_deterministic_sine_wav(req.text, req.sample_rate, req.duration_sec)
+        wav_bytes = _build_deterministic_sine_wav(
+            req.text, req.sample_rate, req.duration_sec
+        )
 
     digest = hashlib.sha256(wav_bytes).hexdigest()
     return TtsResult(
@@ -90,13 +94,17 @@ def synthesize_tts_wav(
     )
 
 
-def _build_deterministic_sine_wav(text: str, sample_rate: int, duration_sec: float) -> bytes:
+def _build_deterministic_sine_wav(
+    text: str, sample_rate: int, duration_sec: float
+) -> bytes:
     seed_hash = hashlib.sha256(text.encode("utf-8")).digest()
     freq_hz = 220.0 + float(seed_hash[0])
     total_samples = max(1, int(sample_rate * duration_sec))
     pcm_frames = bytearray()
     for idx in range(total_samples):
-        sample_val = int(8000.0 * math.sin(2.0 * math.pi * freq_hz * (idx / sample_rate)))
+        sample_val = int(
+            8000.0 * math.sin(2.0 * math.pi * freq_hz * (idx / sample_rate))
+        )
         pcm_frames.extend(struct.pack("<h", sample_val))
 
     buffer = io.BytesIO()
@@ -112,7 +120,8 @@ def transcribe_stt_audio(
     audio_bytes: bytes,
     language: str = "id",
     prompt_hint: str | None = None,
-    backend: Callable[[bytes, str, str | None], tuple[str, list[SttSegment]]] | None = None,
+    backend: Callable[[bytes, str, str | None], tuple[str, list[SttSegment]]]
+    | None = None,
 ) -> SttResult:
     """Transcribe audio bytes into structured STT segments with SHA-256 provenance."""
     if not audio_bytes:

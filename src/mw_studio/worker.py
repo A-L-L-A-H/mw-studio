@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import json
 import os
-from pathlib import Path
 import socket
 import tempfile
 import time
+from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 from mw_studio.clipper import render_clip
 from mw_studio.poster import render_god_promise_svg
+from mw_studio.reel_generator import compile_markdown_reel
 
 DEFAULT_CAPABILITY_TAGS = ("media", "ffmpeg", "poster")
 
@@ -24,20 +25,28 @@ class WorkerConfig:
     """Runtime configuration for StudioWorker."""
 
     mission_url: str = field(
-        default_factory=lambda: os.environ.get("MW_MISSION_URL", "http://127.0.0.1:4450").rstrip("/")
+        default_factory=lambda: os.environ.get(
+            "MW_MISSION_URL", "http://127.0.0.1:4450"
+        ).rstrip("/")
     )
     echo_url: str = field(
-        default_factory=lambda: os.environ.get("MW_ECHO_URL", "http://127.0.0.1:4460").rstrip("/")
+        default_factory=lambda: os.environ.get(
+            "MW_ECHO_URL", "http://127.0.0.1:4460"
+        ).rstrip("/")
     )
     worker_id: str = field(
-        default_factory=lambda: os.environ.get("MW_WORKER_ID", f"mw-studio-{socket.gethostname()}")
+        default_factory=lambda: os.environ.get(
+            "MW_WORKER_ID", f"mw-studio-{socket.gethostname()}"
+        )
     )
     capability_tags: tuple[str, ...] = DEFAULT_CAPABILITY_TAGS
     poll_interval_sec: float = field(
         default_factory=lambda: float(os.environ.get("MW_POLL_INTERVAL_SEC", "2.0"))
     )
     http_timeout_sec: float = 30.0
-    auth_token: str = field(default_factory=lambda: os.environ.get("MW_WORKER_TOKEN", ""))
+    auth_token: str = field(
+        default_factory=lambda: os.environ.get("MW_WORKER_TOKEN", "")
+    )
 
 
 class StudioWorker:
@@ -52,11 +61,17 @@ class StudioWorker:
             headers["Authorization"] = f"Bearer {self.config.auth_token}"
         return headers
 
-    def _post_json(self, url: str, payload: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    def _post_json(
+        self, url: str, payload: dict[str, Any]
+    ) -> tuple[int, dict[str, Any]]:
         body = json.dumps(payload).encode("utf-8")
-        req = urllib_request.Request(url, data=body, headers=self._headers(), method="POST")
+        req = urllib_request.Request(
+            url, data=body, headers=self._headers(), method="POST"
+        )
         try:
-            with urllib_request.urlopen(req, timeout=self.config.http_timeout_sec) as resp:
+            with urllib_request.urlopen(
+                req, timeout=self.config.http_timeout_sec
+            ) as resp:
                 raw = resp.read().decode("utf-8")
                 parsed = json.loads(raw) if raw.strip() else {}
                 return resp.status, parsed
@@ -114,12 +129,12 @@ class StudioWorker:
         parts = [
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="job_id"\r\n\r\n'
-            f"{job_id}\r\n".encode("utf-8"),
+            f"{job_id}\r\n".encode(),
             f"--{boundary}\r\n"
             f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
-            f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"),
+            f"Content-Type: {content_type}\r\n\r\n".encode(),
             content,
-            f"\r\n--{boundary}--\r\n".encode("utf-8"),
+            f"\r\n--{boundary}--\r\n".encode(),
         ]
         body = b"".join(parts)
         headers = self._headers(f"multipart/form-data; boundary={boundary}")
@@ -179,7 +194,9 @@ class StudioWorker:
 
         if job_type in {"clip", "short_clip", "viral_cutter", "short-video-factory"}:
             with tempfile.TemporaryDirectory(prefix="mw-studio-") as tmp_dir:
-                output_path = str(payload.get("output_path") or Path(tmp_dir) / f"clip-{job_id}.mp4")
+                output_path = str(
+                    payload.get("output_path") or Path(tmp_dir) / f"clip-{job_id}.mp4"
+                )
                 clip_payload = dict(payload)
                 clip_payload["output_path"] = output_path
                 render_res = render_clip(clip_payload)
@@ -198,6 +215,26 @@ class StudioWorker:
                     "command": render_res.command,
                     "artifact": upload_resp,
                 }
+
+        if job_type in {"reel", "markdown_reel", "vertical_reel"}:
+            compiled = compile_markdown_reel(payload)
+            self.heartbeat(job_id, progress=0.7)
+            upload_resp = self.upload_artifact(
+                filename=f"reel-{job_id}.srt",
+                content=compiled.srt_subtitles.encode("utf-8"),
+                content_type="application/x-subrip",
+                job_id=job_id,
+            )
+            return {
+                "kind": "reel",
+                "content_type": "application/x-subrip",
+                "scenes": len(compiled.storyboard.scenes),
+                "total_duration_sec": compiled.storyboard.total_duration_sec,
+                "audio_sha256": compiled.audio_sha256,
+                "manifest_sha256": compiled.manifest_sha256,
+                "ffmpeg_command": compiled.ffmpeg_command,
+                "artifact": upload_resp,
+            }
 
         raise ValueError(f"Unsupported job type: {job_type!r}")
 

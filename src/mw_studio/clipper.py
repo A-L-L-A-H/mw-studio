@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import subprocess
-from typing import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
 
 class ClipRenderError(RuntimeError):
@@ -68,8 +68,12 @@ def _coerce_spec(spec: ClipSpec | Mapping[str, object]) -> ClipSpec:
         crf=int(spec.get("crf", 20)),
         preset=str(spec.get("preset", "veryfast")).strip() or "veryfast",
         audio_bitrate=str(spec.get("audio_bitrate", "128k")).strip() or "128k",
-        subtitle_path=str(spec["subtitle_path"]).strip() if spec.get("subtitle_path") else None,
-        watermark_text=str(spec["watermark_text"]).strip() if spec.get("watermark_text") else None,
+        subtitle_path=str(spec["subtitle_path"]).strip()
+        if spec.get("subtitle_path")
+        else None,
+        watermark_text=str(spec["watermark_text"]).strip()
+        if spec.get("watermark_text")
+        else None,
         ffmpeg_bin=str(spec.get("ffmpeg_bin", "ffmpeg")).strip() or "ffmpeg",
     )
 
@@ -155,7 +159,9 @@ def render_clip(
             timeout=timeout_sec,
         )
     except FileNotFoundError as exc:
-        raise ClipRenderError(f"FFmpeg binary not found: {resolved.ffmpeg_bin}") from exc
+        raise ClipRenderError(
+            f"FFmpeg binary not found: {resolved.ffmpeg_bin}"
+        ) from exc
     except subprocess.TimeoutExpired as exc:
         raise ClipRenderError(f"FFmpeg timed out after {timeout_sec}s") from exc
 
